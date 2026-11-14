@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>The Perfect Circle</title>
+<meta name="description" content="Draw a circle. How perfect is it?">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='12' fill='none' stroke='%231f3a93' stroke-width='3'/></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Caveat:wght@500;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --paper: #fbf8ef;
+    --line: #dfe7f2;
+    --margin: #f0b4b4;
+    --ink: #1f3a93;
+    --text: #2b2b2b;
+    --muted: #7a7466;
+    --hand: "Caveat", "Comic Sans MS", "Segoe Print", cursive;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: var(--paper);
+    color: var(--text);
+    font-family: var(--hand);
+    overflow: hidden;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  /* Ruled notebook paper */
+  .paper {
+    position: fixed; inset: 0;
+    background:
+      linear-gradient(90deg, transparent 63px, var(--margin) 63px, var(--margin) 65px, transparent 65px),
+      repeating-linear-gradient(transparent 0 31px, var(--line) 31px 32px);
+  }
+  canvas {
+    position: fixed; inset: 0;
+    width: 100%; height: 100%;
+    touch-action: none;
+    cursor: crosshair;
+  }
+  header {
+    position: fixed; top: 0; left: 0; right: 0;
+    padding: calc(env(safe-area-inset-top, 0px) + 14px) 16px 0 84px;
+    pointer-events: none;
+  }
+  h1 { margin: 0; font-size: clamp(2rem, 6vw, 3.2rem); font-weight: 700; line-height: 1; }
+  .best { font-size: 1.4rem; color: var(--muted); margin-top: 4px; }
+  .center {
+    position: fixed; inset: 0;
+    display: grid; place-items: center;
+    pointer-events: none;
+    text-align: center;
+    padding: 16px;
+  }
+  .score {
+    font-size: clamp(4rem, 18vw, 9rem);
+    font-weight: 700;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+    transition: color .2s;
+  }
+  .message { font-size: clamp(1.5rem, 5vw, 2.4rem); margin-top: 6px; min-height: 1.3em; }
+  .hint { font-size: clamp(1.6rem, 5vw, 2.4rem); color: var(--muted); }
+  .hint .arrow { display: inline-block; animation: wiggle 1.6s ease-in-out infinite; }
+  @keyframes wiggle { 50% { transform: rotate(25deg); } }
+  .pop { animation: pop .35s ease-out; }
+  @keyframes pop { 0% { transform: scale(.6); opacity: 0; } 70% { transform: scale(1.08); } 100% { transform: scale(1); } }
+  footer {
+    position: fixed; left: 0; right: 0; bottom: 0;
+    padding: 0 16px calc(env(safe-area-inset-bottom, 0px) + 12px) 84px;
+    font-size: 1.2rem; color: var(--muted);
+    pointer-events: none;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .hint .arrow, .pop { animation: none; }
+  }
+</style>
+</head>
+<body>
+  <div class="paper" aria-hidden="true"></div>
+  <canvas id="board" aria-label="Drawing area: draw a circle here"></canvas>
+
+  <header>
+    <h1>The Perfect Circle</h1>
+    <div class="best" id="best"></div>
+  </header>
+
+  <div class="center">
+    <div>
+      <div class="hint" id="hint">Draw a circle. As perfect as you can. <span class="arrow">↻</span></div>
+      <div class="score" id="score" hidden></div>
+      <div class="message" id="message" aria-live="polite"></div>
+    </div>
+  </div>
+
+  <footer>Tip: one smooth stroke, all the way round.</footer>
+
+<script src="score.js"></script>
+<script>
+(() => {
+  const canvas = document.getElementById("board");
+  const ctx = canvas.getContext("2d");
+  const hintEl = document.getElementById("hint");
+  const scoreEl = document.getElementById("score");
+  const msgEl = document.getElementById("message");
+  const bestEl = document.getElementById("best");
+
+  let points = [];
+  let drawing = false;
+  let best = 0;
+  try { best = parseFloat(localStorage.getItem("perfect-circle-best")) || 0; } catch {}
+
+  const messages = [
+    [99,  ["Are you a compass?", "Witchcraft. Pure witchcraft.", "Giotto would weep."]],
+    [95,  ["Chef's kiss.", "Basically a pizza.", "Your geometry teacher is proud."]],
+    [90,  ["Very round. Very nice.", "That's a respectable circle.", "Almost suspicious."]],
+    [80,  ["Pretty round!", "A solid donut.", "Not bad at all."]],
+    [70,  ["A potato, but a round one.", "Circle-ish.", "It has circle energy."]],
+    [50,  ["That's an egg.", "Lumpy, but brave.", "Abstract art?"]],
+    [0,   ["Is that a circle? Be honest.", "Squares are cool too.", "Did you sneeze?"]],
+  ];
+  const reasons = {
+    tooSmall: "Too small! Go bigger.",
+    notClosed: "Go all the way round!",
+    tooShort: "That was barely a dot.",
+  };
+
+  const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+  const messageFor = (s) => pick(messages.find(([min]) => s >= min)[1]);
+
+  // Red (bad) → amber → green (good)
+  const colorFor = (s) => `hsl(${Math.max(0, Math.min(120, (s - 40) * 2))}, 70%, 38%)`;
+
+  function showBest() {
+    bestEl.textContent = best > 0 ? `Best: ${best.toFixed(1)}%` : "";
+  }
+
+  function resize() {
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = innerWidth * dpr;
+    canvas.height = innerHeight * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    redraw();
+  }
+
+  const minRadius = () => Math.max(30, Math.min(innerWidth, innerHeight) * 0.08);
+
+  function redraw(result) {
+    ctx.clearRect(0, 0, innerWidth, innerHeight);
+    if (points.length < 2) return;
+
+    // The ideal circle, faintly, once the stroke is done.
+    if (result && result.radius && !result.reason) {
+      ctx.save();
+      ctx.setLineDash([6, 8]);
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = "rgba(0,0,0,.18)";
+      ctx.beginPath();
+      ctx.arc(result.center.x, result.center.y, result.radius, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // The stroke, coloured per segment by how far it strays from the fitted circle.
+    const fit = result && result.radius ? result : window.scoreCircle(points, { minRadius: 0 });
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.lineWidth = 6;
+    for (let i = 1; i < points.length; i++) {
+      const p = points[i];
+      let color = "#1f3a93";
+      if (fit && fit.radius) {
+        const d = Math.abs(Math.hypot(p.x - fit.center.x, p.y - fit.center.y) - fit.radius) / fit.radius;
+        color = colorFor(100 - d * 600);
+      }
+      ctx.strokeStyle = color;
+      ctx.beginPath();
+      ctx.moveTo(points[i - 1].x, points[i - 1].y);
+      ctx.lineTo(p.x, p.y);
+      ctx.stroke();
+    }
+  }
+
+  function setScore(s, live) {
+    scoreEl.hidden = false;
+    scoreEl.textContent = `${s.toFixed(1)}%`;
+    scoreEl.style.color = colorFor(s);
+    if (!live) {
+      scoreEl.classList.remove("pop");
+      void scoreEl.offsetWidth; // restart the animation
+      scoreEl.classList.add("pop");
+    }
+  }
+
+  function start(e) {
+    drawing = true;
+    canvas.setPointerCapture(e.pointerId);
+    points = [{ x: e.clientX, y: e.clientY }];
+    hintEl.hidden = true;
+    scoreEl.hidden = true;
+    msgEl.textContent = "";
+    redraw();
+  }
+
+  function move(e) {
+    if (!drawing) return;
+    const events = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
+    for (const ev of events) points.push({ x: ev.clientX, y: ev.clientY });
+    redraw();
+    // Live score once there's enough of a stroke to judge.
+    if (points.length > 20) {
+      const r = window.scoreCircle(points, { minRadius: minRadius() });
+      if (r.radius && r.reason !== "tooSmall") {
+        // While drawing, only roundness counts — closing comes at the end.
+        const live = Math.max(0, Math.min(100, 100 - (r.deviation ?? liveDeviation(r)) * 600));
+        setScore(live, true);
+      }
+    }
+  }
+
+  function liveDeviation(r) {
+    const ds = points.map((p) => Math.hypot(p.x - r.center.x, p.y - r.center.y));
+    return ds.reduce((a, d) => a + Math.abs(d - r.radius), 0) / ds.length / r.radius;
+  }
+
+  function end() {
+    if (!drawing) return;
+    drawing = false;
+    const r = window.scoreCircle(points, { minRadius: minRadius() });
+    redraw(r);
+    if (r.reason) {
+      scoreEl.hidden = true;
+      msgEl.textContent = reasons[r.reason];
+      return;
+    }
+    setScore(r.score);
+    let msg = messageFor(r.score);
+    if (r.score > best) {
+      if (best > 0) msg = `New best! ${msg}`;
+      best = r.score;
+      try { localStorage.setItem("perfect-circle-best", String(best)); } catch {}
+      showBest();
+    }
+    msgEl.textContent = msg;
+  }
+
+  canvas.addEventListener("pointerdown", start);
+  canvas.addEventListener("pointermove", move);
+  canvas.addEventListener("pointerup", end);
+  canvas.addEventListener("pointercancel", end);
+  addEventListener("resize", resize);
+
+  showBest();
+  resize();
+})();
+</script>
+</body>
+</html>
