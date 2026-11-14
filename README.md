@@ -2,6 +2,8 @@
 
 Draw a circle with your mouse or finger. The game scores how round it is, as a percentage.
 
+**Play it:** https://rubenvanputtenprive.github.io/perfect-circle/
+
 - `index.html`: the game page
 - `score.js`: the scoring logic, shared by the page and the tests
 - `score.test.js`: tests (`node --test`)
