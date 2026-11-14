@@ -7,6 +7,7 @@ Draw a circle with your mouse or finger. The game scores how round it is, as a p
 - `index.html`: the game page
 - `score.js`: the scoring logic, shared by the page and the tests
 - `leaderboard.js`: player names, high scores and top-10 titles
+- `sound.js`: sound effects, synthesised with the Web Audio API (no audio files)
 - `score.test.js`, `leaderboard.test.js`: tests (`node --test`)
 
 ## How scoring works
@@ -27,6 +28,13 @@ score is kept, and the 🏆 button shows the top 10, each rank with its own titl
 
 Scores are stored in the browser (`localStorage`), so the leaderboard covers everyone who
 has played **on that device**. It isn't shared online.
+
+## Sound
+
+While you draw, a soft tone follows your pen. It gets louder as you move faster and rises in pitch
+as the circle gets rounder. When you finish, a chime plays (brighter for better scores), a
+fanfare marks a new best or leaderboard rank, and a low "boop" means the stroke didn't count.
+The 🔊 button in the bottom-right corner mutes it, and the setting is remembered.
 
 ## Run locally
 

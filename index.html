@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>The Perfect Circle</title>
+<meta name="theme-color" content="#d8f3e4">
 <meta name="description" content="Draw a circle. How perfect is it?">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='12' fill='none' stroke='%231f3a93' stroke-width='3'/></svg>">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -11,8 +12,8 @@
 <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@500;700&display=swap" rel="stylesheet">
 <style>
   :root {
-    --paper: #fbf8ef;
-    --line: #dfe7f2;
+    --paper: #d8f3e4; /* mint green */
+    --line: #b9e0cc;
     --margin: #f0b4b4;
     --ink: #1f3a93;
     --text: #2b2b2b;
@@ -72,7 +73,19 @@
     .trophy .label { display: none; }
     header { padding-right: 76px; }
   }
-  .trophy:active { transform: translate(2px, 3px); box-shadow: none; }
+  .trophy:active, .sound:active { transform: translate(2px, 3px); box-shadow: none; }
+  .sound {
+    position: fixed;
+    right: 16px; bottom: calc(env(safe-area-inset-bottom, 0px) + 12px);
+    font: 700 1.4rem var(--hand);
+    color: var(--text);
+    background: #fff8d6;
+    border: 2px solid var(--text);
+    border-radius: 15px 225px 15px 255px / 255px 15px 225px 15px;
+    padding: 2px 12px;
+    cursor: pointer;
+    box-shadow: 2px 3px 0 var(--text);
+  }
 
   dialog {
     font-family: var(--hand);
@@ -146,7 +159,7 @@
   @keyframes pop { 0% { transform: scale(.6); opacity: 0; } 70% { transform: scale(1.08); } 100% { transform: scale(1); } }
   footer {
     position: fixed; left: 0; right: 0; bottom: 0;
-    padding: 0 16px calc(env(safe-area-inset-bottom, 0px) + 12px) 84px;
+    padding: 0 84px calc(env(safe-area-inset-bottom, 0px) + 12px) 84px;
     font-size: 1.2rem; color: var(--muted);
     pointer-events: none;
   }
@@ -192,10 +205,13 @@
     </div>
   </div>
 
+  <button class="sound" id="soundBtn" type="button"></button>
+
   <footer>Tip: one smooth stroke, all the way round.</footer>
 
 <script src="score.js"></script>
 <script src="leaderboard.js"></script>
+<script src="sound.js"></script>
 <script>
 (() => {
   const canvas = document.getElementById("board");
@@ -212,6 +228,15 @@
   const boardDialog = document.getElementById("boardDialog");
   const boardEl = document.getElementById("boardList");
   const LB = window.Leaderboard;
+  const SFX = window.Sound;
+  const soundBtn = document.getElementById("soundBtn");
+  function showSound() {
+    soundBtn.textContent = SFX.muted ? "🔇" : "🔊";
+    soundBtn.setAttribute("aria-label", SFX.muted ? "Turn sound on" : "Turn sound off");
+    soundBtn.setAttribute("aria-pressed", String(!SFX.muted));
+  }
+  soundBtn.addEventListener("click", () => { SFX.toggleMute(); showSound(); });
+  showSound();
   // Touching localStorage can itself throw (blocked site data), so grab it once safely.
   const store = (() => { try { return window.localStorage; } catch { return null; } })();
 
@@ -260,6 +285,7 @@
     player = name;
     try { store.setItem("perfect-circle-name", player); } catch {}
     nameDialog.close();
+    SFX.click();
     showBest();
   });
   // Escape only closes the name box if we already have a name.
@@ -366,13 +392,17 @@
     hintEl.hidden = true;
     scoreEl.hidden = true;
     msgEl.textContent = "";
+    SFX.drawStart();
     redraw();
   }
 
   function move(e) {
     if (!drawing) return;
     const events = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
+    const prev = points[points.length - 1];
     for (const ev of events) points.push({ x: ev.clientX, y: ev.clientY });
+    const last = points[points.length - 1];
+    let liveScore = null;
     redraw();
     // Live score once there's enough of a stroke to judge.
     if (points.length > 20) {
@@ -381,8 +411,10 @@
         // While drawing, only roundness counts — closing comes at the end.
         const live = Math.max(0, Math.min(100, 100 - (r.deviation ?? liveDeviation(r)) * 600));
         setScore(live, true);
+        liveScore = live;
       }
     }
+    SFX.drawUpdate(Math.hypot(last.x - prev.x, last.y - prev.y), liveScore);
   }
 
   function liveDeviation(r) {
@@ -393,14 +425,17 @@
   function end() {
     if (!drawing) return;
     drawing = false;
+    SFX.drawStop();
     const r = window.scoreCircle(points, { minRadius: minRadius() });
     redraw(r);
     if (r.reason) {
       scoreEl.hidden = true;
       msgEl.textContent = reasons[r.reason];
+      SFX.fail();
       return;
     }
     setScore(r.score);
+    SFX.score(r.score);
     const hadBest = LB.bestOf(players, player) > 0;
     const res = LB.record(players, player, Math.round(r.score * 10) / 10);
     players = res.players;
@@ -414,6 +449,7 @@
       up.textContent = `#${res.rank} — you are now ${res.title}!`;
       msgEl.append(up);
     }
+    if (res.improved && (hadBest || res.rank)) SFX.fanfare();
     msgEl.append((res.improved && hadBest ? "New best! " : "") + messageFor(r.score));
   }
 
