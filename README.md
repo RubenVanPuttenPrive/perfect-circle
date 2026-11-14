@@ -6,7 +6,8 @@ Draw a circle with your mouse or finger. The game scores how round it is, as a p
 
 - `index.html`: the game page
 - `score.js`: the scoring logic, shared by the page and the tests
-- `score.test.js`: tests (`node --test`)
+- `leaderboard.js`: player names, high scores and top-10 titles
+- `score.test.js`, `leaderboard.test.js`: tests (`node --test`)
 
 ## How scoring works
 
@@ -17,6 +18,15 @@ Draw a circle with your mouse or finger. The game scores how round it is, as a p
    - a gap between the start and end of the stroke
    - going round more than once
 4. A stroke that is too small or doesn't go all the way round scores 0, with a hint.
+
+## Leaderboard
+
+When the page opens it asks for your name (click your name to change it). Each player's best
+score is kept, and the 🏆 button shows the top 10, each rank with its own title, from
+#1 *Supreme Circle Overlord* to #10 *Round Rookie*.
+
+Scores are stored in the browser (`localStorage`), so the leaderboard covers everyone who
+has played **on that device**. It isn't shared online.
 
 ## Run locally
 

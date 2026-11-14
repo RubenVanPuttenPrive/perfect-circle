@@ -49,6 +49,81 @@
   }
   h1 { margin: 0; font-size: clamp(2rem, 6vw, 3.2rem); font-weight: 700; line-height: 1; }
   .best { font-size: 1.4rem; color: var(--muted); margin-top: 4px; }
+  .linkish {
+    pointer-events: auto;
+    font: inherit; color: var(--ink);
+    background: none; border: 0; padding: 0 2px;
+    text-decoration: underline; text-underline-offset: 3px;
+    cursor: pointer;
+  }
+  .trophy {
+    position: fixed;
+    top: calc(env(safe-area-inset-top, 0px) + 14px); right: 16px;
+    font: 700 1.5rem var(--hand);
+    color: var(--text);
+    background: #fff8d6;
+    border: 2px solid var(--text);
+    border-radius: 255px 15px 225px 15px / 15px 225px 15px 255px; /* wobbly hand-drawn box */
+    padding: 4px 14px;
+    cursor: pointer;
+    box-shadow: 2px 3px 0 var(--text);
+  }
+  @media (max-width: 560px) {
+    .trophy .label { display: none; }
+    header { padding-right: 76px; }
+  }
+  .trophy:active { transform: translate(2px, 3px); box-shadow: none; }
+
+  dialog {
+    font-family: var(--hand);
+    color: var(--text);
+    background: var(--paper);
+    border: 3px solid var(--text);
+    border-radius: 255px 15px 225px 15px / 15px 225px 15px 255px;
+    box-shadow: 4px 6px 0 var(--text);
+    padding: 24px 28px;
+    width: min(440px, calc(100vw - 32px));
+  }
+  dialog::backdrop { background: rgba(40, 35, 20, .35); }
+  dialog h2 { margin: 0 0 8px; font-size: 2.2rem; line-height: 1.1; }
+  dialog p { margin: 0 0 14px; font-size: 1.35rem; color: var(--muted); }
+  dialog input {
+    width: 100%;
+    font: 700 1.8rem var(--hand);
+    color: var(--ink);
+    background: transparent;
+    border: 0; border-bottom: 3px solid var(--ink);
+    padding: 4px 2px; outline: none;
+  }
+  .actions { display: flex; justify-content: flex-end; gap: 12px; margin-top: 18px; }
+  .btn {
+    font: 700 1.5rem var(--hand);
+    color: #fff; background: var(--ink);
+    border: 0; border-radius: 12px 4px 12px 4px;
+    padding: 6px 20px; cursor: pointer;
+  }
+  .btn.ghost { color: var(--ink); background: transparent; }
+
+  .board { list-style: none; margin: 0; padding: 0; font-size: 1.35rem; }
+  .board li {
+    display: grid;
+    grid-template-columns: 2.2em 1fr auto;
+    align-items: baseline;
+    gap: 0 8px;
+    padding: 5px 0;
+    border-bottom: 1px dashed var(--line);
+  }
+  .board .rank { font-weight: 700; font-size: 1.6rem; }
+  .board .who { min-width: 0; overflow-wrap: anywhere; }
+  .board .name { font-weight: 700; }
+  .board .title { display: block; color: var(--muted); font-size: 1.15rem; line-height: 1; }
+  .board .pts { font-weight: 700; font-variant-numeric: tabular-nums; }
+  .board .me { background: #fff3b0; }
+  .board li:nth-child(1) .rank { color: #c9a100; }
+  .board li:nth-child(2) .rank { color: #8a8f99; }
+  .board li:nth-child(3) .rank { color: #b26a2e; }
+  .empty { font-size: 1.35rem; color: var(--muted); }
+  .rankup { color: var(--ink); font-weight: 700; }
   .center {
     position: fixed; inset: 0;
     display: grid; place-items: center;
@@ -86,8 +161,28 @@
 
   <header>
     <h1>The Perfect Circle</h1>
-    <div class="best" id="best"></div>
+    <div class="best">
+      Playing as <button class="linkish" id="who" type="button" aria-label="Change name"></button>
+      <span id="best"></span>
+    </div>
   </header>
+  <button class="trophy" id="trophyBtn" type="button" aria-label="Top 10 leaderboard">🏆<span class="label"> Top 10</span></button>
+
+  <dialog id="nameDialog">
+    <form id="nameForm">
+      <h2>Who's drawing?</h2>
+      <p>Your name goes on the leaderboard.</p>
+      <input id="nameInput" maxlength="20" autocomplete="nickname" required placeholder="Your name" aria-label="Your name">
+      <div class="actions"><button class="btn" type="submit">Let's go!</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="boardDialog">
+    <h2>🏆 Hall of Circles</h2>
+    <p>The 10 roundest artists on this device.</p>
+    <ol class="board" id="boardList"></ol>
+    <div class="actions"><button class="btn" id="boardClose" type="button">Close</button></div>
+  </dialog>
 
   <div class="center">
     <div>
@@ -100,6 +195,7 @@
   <footer>Tip: one smooth stroke, all the way round.</footer>
 
 <script src="score.js"></script>
+<script src="leaderboard.js"></script>
 <script>
 (() => {
   const canvas = document.getElementById("board");
@@ -109,10 +205,21 @@
   const msgEl = document.getElementById("message");
   const bestEl = document.getElementById("best");
 
+  const whoEl = document.getElementById("who");
+  const nameDialog = document.getElementById("nameDialog");
+  const nameForm = document.getElementById("nameForm");
+  const nameInput = document.getElementById("nameInput");
+  const boardDialog = document.getElementById("boardDialog");
+  const boardEl = document.getElementById("boardList");
+  const LB = window.Leaderboard;
+  // Touching localStorage can itself throw (blocked site data), so grab it once safely.
+  const store = (() => { try { return window.localStorage; } catch { return null; } })();
+
   let points = [];
   let drawing = false;
-  let best = 0;
-  try { best = parseFloat(localStorage.getItem("perfect-circle-best")) || 0; } catch {}
+  let players = LB.load(store);
+  let player = "";
+  try { player = store.getItem("perfect-circle-name") || ""; } catch {}
 
   const messages = [
     [99,  ["Are you a compass?", "Witchcraft. Pure witchcraft.", "Giotto would weep."]],
@@ -136,8 +243,64 @@
   const colorFor = (s) => `hsl(${Math.max(0, Math.min(120, (s - 40) * 2))}, 70%, 38%)`;
 
   function showBest() {
-    bestEl.textContent = best > 0 ? `Best: ${best.toFixed(1)}%` : "";
+    whoEl.textContent = player || "…";
+    const best = player ? LB.bestOf(players, player) : 0;
+    bestEl.textContent = best > 0 ? `· Best: ${best.toFixed(1)}%` : "";
   }
+
+  function askName() {
+    nameInput.value = player;
+    nameDialog.showModal();
+    nameInput.select();
+  }
+  nameForm.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const name = nameInput.value.trim();
+    if (!name) return;
+    player = name;
+    try { store.setItem("perfect-circle-name", player); } catch {}
+    nameDialog.close();
+    showBest();
+  });
+  // Escape only closes the name box if we already have a name.
+  nameDialog.addEventListener("cancel", (e) => { if (!player) e.preventDefault(); });
+  whoEl.addEventListener("click", askName);
+
+  function showBoard() {
+    const top = LB.top10(players);
+    boardEl.replaceChildren();
+    if (!top.length) {
+      const li = document.createElement("li");
+      li.className = "empty";
+      li.textContent = "Nobody yet. Be the first!";
+      boardEl.append(li);
+    }
+    for (const p of top) {
+      const li = document.createElement("li");
+      if (player && p.name.toLowerCase() === player.toLowerCase()) li.className = "me";
+      const rank = document.createElement("span");
+      rank.className = "rank";
+      rank.textContent = `#${p.rank}`;
+      const who = document.createElement("span");
+      who.className = "who";
+      const name = document.createElement("span");
+      name.className = "name";
+      name.textContent = p.name; // textContent: names are never treated as HTML
+      const title = document.createElement("span");
+      title.className = "title";
+      title.textContent = p.title;
+      who.append(name, title);
+      const pts = document.createElement("span");
+      pts.className = "pts";
+      pts.textContent = `${p.score.toFixed(1)}%`;
+      li.append(rank, who, pts);
+      boardEl.append(li);
+    }
+    boardDialog.showModal();
+  }
+  document.getElementById("trophyBtn").addEventListener("click", showBoard);
+  document.getElementById("boardClose").addEventListener("click", () => boardDialog.close());
+  boardDialog.addEventListener("click", (e) => { if (e.target === boardDialog) boardDialog.close(); });
 
   function resize() {
     const dpr = window.devicePixelRatio || 1;
@@ -238,14 +401,20 @@
       return;
     }
     setScore(r.score);
-    let msg = messageFor(r.score);
-    if (r.score > best) {
-      if (best > 0) msg = `New best! ${msg}`;
-      best = r.score;
-      try { localStorage.setItem("perfect-circle-best", String(best)); } catch {}
-      showBest();
+    const hadBest = LB.bestOf(players, player) > 0;
+    const res = LB.record(players, player, Math.round(r.score * 10) / 10);
+    players = res.players;
+    LB.save(store, players);
+    showBest();
+
+    msgEl.replaceChildren();
+    if (res.improved && res.rank) {
+      const up = document.createElement("div");
+      up.className = "rankup";
+      up.textContent = `#${res.rank} — you are now ${res.title}!`;
+      msgEl.append(up);
     }
-    msgEl.textContent = msg;
+    msgEl.append((res.improved && hadBest ? "New best! " : "") + messageFor(r.score));
   }
 
   canvas.addEventListener("pointerdown", start);
@@ -256,6 +425,7 @@
 
   showBest();
   resize();
+  askName();
 })();
 </script>
 </body>
